@@ -2,10 +2,10 @@
 import numpy as np
 import pandas as pd
 
-def load_and_preprocess_data(filename):
+def load_and_preprocess_data(filename): #in summary, load the data, convernts inputs to numeric, dropps useless columns such as year, makes NAN 0, and creates a feature Matrix X and label Y
     df = pd.read_csv("C:/Users/gsnov/Downloads/diabetes_dataset.csv")
 
-    print("Dataset shape:", df.shape)
+    print("Dataset shape:", df.shape) #ensuring the data set is properly loaded
     print("Columns:", df.columns.tolist())
     print("\nFirst few rows:")
     print(df.head())
@@ -15,18 +15,19 @@ def load_and_preprocess_data(filename):
     numeric_columns = ['age', 'bmi', 'hbA1c_level', 'blood_glucose_level']
     for col in numeric_columns:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col] = pd.to_numeric(df[col], errors='coerce') #force changes columns to numeric, turning to NAN is missing
 
-    if 'gender' in df.columns:
+    if 'gender' in df.columns: #sets females to 0, males to 1, others to 2
         df['gender'] = df['gender'].astype(str)
         df['gender'] = df['gender'].map({'Female': 0, 'Male': 1, 'Other': 2}).fillna(2)
 
-    if 'smoking_history' in df.columns:
+    if 'smoking_history' in df.columns: #sets never to 0, former to 1, current to 2, no info to 3
         df['smoking_history'] = df['smoking_history'].astype(str)
         df['smoking_history'] = df['smoking_history'].map({
             'never': 0, 'former': 1, 'current': 2, 'No Info': 3, 'no info': 3
         }).fillna(3)
 
+    #lines 30 to 47 ensure columns exist, drop year because its not revelant, and sets NAN to 0.
     feature_columns = [
         'gender', 'age', 'hypertension', 'heart_disease', 'smoking_history',
         'bmi', 'hbA1c_level', 'blood_glucose_level',
@@ -39,7 +40,7 @@ def load_and_preprocess_data(filename):
         df = df.drop('year', axis=1)
 
     df = df.fillna(0)
-
+    #creates matrix of features X (inputs turned numeric) and Labels y (yes or not diabetic)
     for col in feature_columns:
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
@@ -56,33 +57,34 @@ def load_and_preprocess_data(filename):
 
     return X, y, feature_columns
 
-def train_test_split(X, y, test_size=0.5, random_state=42):
+def train_test_split(X, y, test_size=0.5, random_state=42): #makes unbias training sets
     np.random.seed(random_state)
     n = X.shape[0]
-    indices = np.random.permutation(n)
-    split_idx = int(n * (1 - test_size))
+    indices = np.random.permutation(n) #creates random order of indeces to ensure distinct splits each time
+    split_idx = int(n * (1 - test_size)) #gets point to split
 
-    train_idx = indices[:split_idx]
+    #splits
+    train_idx = indices[:split_idx] 
     test_idx = indices[split_idx:]
-
+    #Makes the sets
     X_train, X_test = X[train_idx], X[test_idx]
     y_train, y_test = y[train_idx], y[test_idx]
 
     return X_train, X_test, y_train, y_test
 
-def standardize_features(X_train, X_test):
+def standardize_features(X_train, X_test): #makes stander unit for all given that each row has differnt input sizes
     X_train_std = X_train.copy().astype(np.float64)
     X_test_std = X_test.copy().astype(np.float64)
 
-    continuous_indices = [2, 6, 7, 8]
+    continuous_indices = [2, 6, 7, 8] #age, bmi, hbA1c_level, blood_glucose_level
 
     for idx in continuous_indices:
         if idx < X_train.shape[1]:
-            mean = np.mean(X_train[:, idx])
-            std = np.std(X_train[:, idx])
+            mean = np.mean(X_train[:, idx]) #get mean
+            std = np.std(X_train[:, idx]) #get standard deviation
             if std > 0:
-                X_train_std[:, idx] = (X_train[:, idx] - mean) / std
-                X_test_std[:, idx] = (X_test[:, idx] - mean) / std
+                X_train_std[:, idx] = (X_train[:, idx] - mean) / std #turns it into scaled value (math formula)
+                X_test_std[:, idx] = (X_test[:, idx] - mean) / std #turns it into scaled value (math formula
 
     return X_train_std, X_test_std
 
@@ -94,12 +96,12 @@ class LogisticRegression:
         self.weights = None
         self.loss_history = []
 
-    def sigmoid(self, z):
+    def sigmoid(self, z): #formula for linear output as probability (squishes values)
         z = np.asarray(z, dtype=np.float64)
         z_clipped = np.clip(z, -250, 250)
         return 1.0 / (1.0 + np.exp(-z_clipped))
 
-    def compute_loss(self, X, y):
+    def compute_loss(self, X, y): #computes loss for logistic regression (how wrong it is)
         z = X @ self.weights
         predictions = self.sigmoid(z)
         epsilon = 1e-15
@@ -107,7 +109,7 @@ class LogisticRegression:
         loss = -np.mean(y * np.log(predictions) + (1 - y) * np.log(1 - predictions))
         return loss
 
-    def fit(self, X, y):
+    def fit(self, X, y): #training loop
         X = X.astype(np.float64)
         y = y.astype(np.float64)
 
@@ -116,7 +118,7 @@ class LogisticRegression:
 
         print(f"Starting Logistic Regression training with {n_features} features...")
 
-        for i in range(self.max_iter):
+        for i in range(self.max_iter): #gets gradient and adjusts weights
             z = X @ self.weights
             predictions = self.sigmoid(z)
 
@@ -135,14 +137,14 @@ class LogisticRegression:
                 loss = self.compute_loss(X, y)
                 print(f"Iteration {i}, Loss: {loss:.4f}")
 
-    def predict_proba(self, X):
+    def predict_proba(self, X): #given X, gets us the probability
         X = X.astype(np.float64)
         return self.sigmoid(X @ self.weights)
 
-    def predict(self, X, threshold=0.5):
+    def predict(self, X, threshold=0.5): #condition to considering something diabetic or not based on threshold
         return (self.predict_proba(X) >= threshold).astype(int)
 
-class LinearSVM:
+class LinearSVM: #draws a boundry between diabetic and non diabetic
     def __init__(self, learning_rate=0.001, lambda_param=0.01, max_iter=1000, tol=1e-4):
         self.learning_rate = learning_rate
         self.lambda_param = lambda_param
