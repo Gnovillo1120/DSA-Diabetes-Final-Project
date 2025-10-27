@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import altair as alt
+import plotly.express as px
 
 with open("logistic_regression_model.pkl", "rb") as f:
     lr_model, feature_names = pickle.load(f)
@@ -35,7 +36,7 @@ st.sidebar.title("Diabetes Prediction Dashboard")
 with st.sidebar:
     selected = option_menu(
         menu_title="Main Menu",
-        options=["Diabetes Risk Calculator", "Model Comparison", "Feature Importance"]
+        options=["Diabetes Risk Calculator", "Model Comparison", "Feature Importance", "BMI by Race"]
     )
 
 if selected == "Diabetes Risk Calculator":
@@ -109,8 +110,30 @@ elif selected == "Feature Importance":
     st.altair_chart(chart, use_container_width=True)
     st.dataframe(feature_dataframe)
 
+elif selected == "BMI by Race":
+    st.title("BMI Visualization")
+    df = pd.read_csv("C:/Users/gsnov/Downloads/diabetes_dataset.csv")
+    race_cols = ['race:AfricanAmerican', 'race:Asian', 'race:Caucasian', 'race:Hispanic', 'race:Other']
+    available_race_cols = [col for col in race_cols if col in df.columns]
+    def get_race(row):
+        for col in available_race_cols:
+            if row[col] == 1:
+                return col.split(":")[1] 
+        return 'Invalid'
 
+    if available_race_cols:
+        df['race'] = df.apply(get_race, axis=1)
+        df = df.drop(columns=available_race_cols)  
+    bmi_plotting_data_with_race = (df.groupby("year", group_keys=False).apply(lambda x: x.sample(min(len(x), 625), random_state=42)))
 
+    
+    bmi_plotting_data_with_race['year'] = bmi_plotting_data_with_race['year'].astype(int)
+    bmi_plotting_data_with_race = bmi_plotting_data_with_race.sort_values(by='year')
+
+    animated_scatter = px.scatter(bmi_plotting_data_with_race, x="age", y="bmi", color="race", animation_frame= "year")
+    animated_scatter.layout.updatemenus[0].buttons[0].args[1]['frame']['duration'] = 2000  
+    animated_scatter.layout.updatemenus[0].buttons[0].args[1]['transition']['duration'] = 2000 
+    st.plotly_chart(animated_scatter)
 
 
 
