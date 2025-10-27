@@ -75,6 +75,8 @@ def train_test_split(X, y, test_size=0.5, random_state=42): #makes unbias traini
 def standardize_features(X_train, X_test): #makes stander unit for all given that each row has differnt input sizes
     X_train_std = X_train.copy().astype(np.float64)
     X_test_std = X_test.copy().astype(np.float64)
+    means = {}
+    stds = {}
 
     continuous_indices = [2, 6, 7, 8] #age, bmi, hbA1c_level, blood_glucose_level
 
@@ -82,11 +84,13 @@ def standardize_features(X_train, X_test): #makes stander unit for all given tha
         if idx < X_train.shape[1]:
             mean = np.mean(X_train[:, idx]) #get mean
             std = np.std(X_train[:, idx]) #get standard deviation
+            means[idx] = mean
+            stds[idx] = std
             if std > 0:
                 X_train_std[:, idx] = (X_train[:, idx] - mean) / std #turns it into scaled value (math formula)
                 X_test_std[:, idx] = (X_test[:, idx] - mean) / std #turns it into scaled value (math formula
 
-    return X_train_std, X_test_std
+    return X_train_std, X_test_std, (means, stds)
 
 class LogisticRegression:
     def __init__(self, learning_rate=0.01, max_iter=1000, tol=1e-4):
@@ -235,7 +239,7 @@ def main():
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, random_state=42)
 
 
-        X_train_std, X_test_std = standardize_features(X_train, X_test)
+        X_train_std, X_test_std,_ = standardize_features(X_train, X_test) #LINE TO CHECK
 
         print(f"\nTraining set size: {X_train.shape[0]}")
         print(f"Test set size: {X_test.shape[0]}")

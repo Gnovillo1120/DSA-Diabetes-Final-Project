@@ -5,12 +5,23 @@ import numpy as np
 import pandas as pd
 import altair as alt
 import plotly.express as px
+from plotly import graph_objects as go
+from main import load_and_preprocess_data
+
 
 with open("logistic_regression_model.pkl", "rb") as f:
-    lr_model, feature_names = pickle.load(f)
+    lr_model, feature_names, scaler_value = pickle.load(f)
 
 with open("svm_model.pkl", "rb") as f:
-    svm_model, _ = pickle.load(f)
+    svm_model, _, scaler_value = pickle.load(f)
+
+def scale(user, scaler_val):
+    means, stds = scaler_val
+    for idx, mean in means.items():
+        std = stds[idx]
+        if std > 0:
+            user[:, idx] = (user[:, idx] - mean) / std
+    return user
 
 def result_card(value, title, non_diabetic = True, ):
     if non_diabetic:
@@ -67,6 +78,8 @@ if selected == "Diabetes Risk Calculator":
         user_info = [1, gender_correspondance[gender], age, hypertension, heart_disease, smoking_correspondance[smoking], bmi, h1ba1c, glucose, 0, 0, 0, 0, 0]
 
         formated_array = np.array(user_info).reshape(1, -1)
+        formated_array = scale(formated_array, scaler_value)
+        st.session_state["user_input"] = formated_array
 
         linear_regression_probability = lr_model.predict_proba(formated_array)[0]
         linear_regression_prediction = lr_model.predict(formated_array)[0]
@@ -86,9 +99,18 @@ if selected == "Diabetes Risk Calculator":
                     f"{label_dictionary[svm_prediction]}", "Linear SVM", non_diabetic = (svm_prediction == 0)), unsafe_allow_html=True)
 
 elif selected == "Model Comparison":
-    st.title("Model Comparison")
-    st.write("Need to add a comparison tableee!!!!!!!!")
-
+    st.title("Your Comparison against others")
+    #df = pd.read_csv("C:/Users/gsnov/Downloads/diabetes_dataset.csv")
+    X, y, feature_names = load_and_preprocess_data('C:/Users/gsnov/Downloads/diabetes_dataset.csv')
+    X = scale(X, scaler_value)
+    patients_lr_prediction = lr_model.predict_proba(X)
+    if "user_input" in st.session_state:
+        user_probability = lr_model.predict_proba(st.session_state["user_input"])[0]
+        graph = px.histogram(patients_lr_prediction, nbins=30, title="Logistic Regression Predictions Distribution")
+        graph.add_vline(x=float(user_probability), line_color="red", line_dash="dash", annotation_text = f"You: {user_probability:.2%}", annotation_position = "top right")
+        st.plotly_chart(graph, use_container_width=True)
+    else:
+        st.warning("Please use Diabetes risk calculator first for the values")
 
 elif selected == "Feature Importance":
     st.title("Feature Importance")
@@ -134,38 +156,6 @@ elif selected == "BMI by Race":
     animated_scatter.layout.updatemenus[0].buttons[0].args[1]['frame']['duration'] = 2000  
     animated_scatter.layout.updatemenus[0].buttons[0].args[1]['transition']['duration'] = 2000 
     st.plotly_chart(animated_scatter)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
