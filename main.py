@@ -7,6 +7,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.metrics import mean_squared_error
 
+
 def train_test_split(X, y, test_size=0.5, random_state=42):
     np.random.seed(random_state)
     n = X.shape[0]
@@ -22,18 +23,17 @@ def standardize_features(X_train, X_test):
     X_test_std = X_test.copy().astype(np.float64)
     means = {}
     stds = {}
-    continuous_indices = [1, 5, 6, 7] #age, bmi, hbA1c_level, blood_glucose_level
+    continuous_indices = [1, 5, 6, 7]  # age, bmi, hbA1c_level, blood_glucose_level
     for idx in continuous_indices:
         if idx < X_train.shape[1]:
-            mean = np.mean(X_train[:, idx]) #get mean
-            std = np.std(X_train[:, idx]) #get standard deviation
+            mean = np.mean(X_train[:, idx])  # get mean
+            std = np.std(X_train[:, idx])  # get standard deviation
             means[idx] = mean
             stds[idx] = std
             if std > 0:
-                X_train_std[:, idx] = (X_train[:, idx] - mean) / std #turns it into scaled value (math formula)
-                X_test_std[:, idx] = (X_test[:, idx] - mean) / std #turns it into scaled value (math formula
+                X_train_std[:, idx] = (X_train[:, idx] - mean) / std  # turns it into scaled value (math formula)
+                X_test_std[:, idx] = (X_test[:, idx] - mean) / std  # turns it into scaled value (math formula
     return X_train_std, X_test_std, (means, stds)
-
 
 
 class LogisticRegression:
@@ -55,7 +55,7 @@ class LogisticRegression:
         prev_loss = float('inf')
         lr = self.learning_rate
         print(f"Starting Logistic Regression training with {n_features} features...")
-        for i in range(self.max_iter): #gets gradient and adjusts weights
+        for i in range(self.max_iter):  # gets gradient and adjusts weights
             z = X @ self.weights
             predictions = self.sigmoid(z)
 
@@ -77,9 +77,11 @@ class LogisticRegression:
 
     def predict_proba(self, X):
         return self.sigmoid(X @ self.weights)
+
     def predict(self, X):
         prob = self.predict_proba(X)
         return np.where(prob >= 0.5, 1, 0)
+
 
 class LinearSVM:
     def __init__(self, learning_rate=0.001, lambda_param=0.01, max_iter=2000, tol=1e-6):
@@ -115,10 +117,11 @@ class LinearSVM:
     def predict_proba(self, X):
         decision = X @ self.weights
         return 1 / (1 + np.exp(-decision))
-    
+
     def predict(self, X):
         linear_output = X @ self.weights
         return np.where(linear_output >= 0, 1, 0)
+
 
 def mean_squared_error(y_true, y_pred):
     return np.mean((y_true - y_pred) ** 2)
@@ -153,6 +156,7 @@ def load_and_preprocess_data(filename):
 
     return X, y, feature_cols
 
+
 def evaluate_model(model, X_test, y_test):
     # Try predict_proba, then decision_function, else fallback to predict
     try:
@@ -167,15 +171,16 @@ def evaluate_model(model, X_test, y_test):
     mse = mean_squared_error(y_test, probs)
     return mse, probs
 
+
 def main():
     # Load data
-    X, y, features = load_and_preprocess_data("C:/Users/gsnov/Downloads/diabetes_dataset.csv")
+    X, y, features = load_and_preprocess_data("C:/Users/anvis/Downloads/diabetes_dataset.csv")
 
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, random_state=42)
 
     # Standardize features
-    X_train_std, X_test_std = standardize_features(X_train, X_test)
+    X_train_std, X_test_std, (means, stds)= standardize_features(X_train, X_test)
 
     # Initialize and train your hand-coded models
     lr = LogisticRegression(learning_rate=0.1, max_iter=2000, tol=1e-6)
@@ -240,6 +245,7 @@ def main():
                 print(f"{feat}: {coef:.6f}")
         else:
             print("No coefficient information available")
+
 
 if __name__ == "__main__":
     main()
