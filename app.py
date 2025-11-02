@@ -15,14 +15,13 @@ with open("logistic_regression_model.pkl", "rb") as f:
 with open("svm_model.pkl", "rb") as f:
     svm_model, _, scaler_value = pickle.load(f)
 
-def scale(user, scaler_val):
-    means, stds = scaler_val
-    for idx, mean in means.items():
-        std = stds[idx]
-        if std > 0:
-            user[:, idx] = (user[:, idx] - mean) / std
-    return user
 
+def scale(user, scaler_val):
+    means = scaler_val['means']
+    stds = scaler_val['stds']
+    for idx in range(len(means)):
+        user[:, idx + 1] = (user[:, idx + 1] - means[idx]) / stds[idx]
+    return user
 def result_card(value, title, non_diabetic = True, ):
     if non_diabetic:
         color = "#e6fffa"
@@ -75,16 +74,26 @@ if selected == "Diabetes Risk Calculator":
     if st.button("Calculate Risk"):
         gender_correspondance = {"Female": 0, "Male": 1, "Other": 2}
         smoking_correspondance = {"Never": 0, "Former": 1, "Current": 2, "No Information": 3}
-        user_info = [1, gender_correspondance[gender], age, hypertension, heart_disease, smoking_correspondance[smoking], bmi, h1ba1c, glucose, 0, 0, 0, 0, 0]
+        user_info = [gender_correspondance[gender], age, hypertension, heart_disease,
+                     smoking_correspondance[smoking], bmi, h1ba1c, glucose, 0, 0, 0, 0, 0]
 
         formated_array = np.array(user_info).reshape(1, -1)
+
+        # ADD INTERCEPT column at the start
+        formated_array = np.hstack([np.ones((formated_array.shape[0], 1)), formated_array])
+
+        # scale features
         formated_array = scale(formated_array, scaler_value)
         st.session_state["user_input"] = formated_array
 
+        print("formated_array shape:", formated_array.shape)
+        print("lr weights shape:", lr_model.weights.shape)
+
         linear_regression_probability = lr_model.predict_proba(formated_array)[0]
         linear_regression_prediction = lr_model.predict(formated_array)[0]
-        svm_prediction = svm_model.predict(formated_array)[0]
 
+        svm_probability = svm_model.predict_proba(formated_array)[0]
+        svm_prediction = svm_model.predict(formated_array)[0]
         st.subheader("Prediction Results: ")
         label_dictionary = {0: "Non-Diabetic", 1: "Diabetic"}
 
@@ -92,16 +101,28 @@ if selected == "Diabetes Risk Calculator":
         with col1:
             st.markdown(
                 result_card(
-                    f"{label_dictionary[linear_regression_prediction]} ({linear_regression_probability:.2%})", "Logistic Regression", non_diabetic=(linear_regression_prediction == 0)), unsafe_allow_html=True)
+                    f"{label_dictionary[int(linear_regression_prediction)]} ({linear_regression_probability:.2%})",
+                    "Logistic Regression",
+                    non_diabetic=(int(linear_regression_prediction) == 0)
+                ),
+                unsafe_allow_html=True
+            )
+
         with col2:
             st.markdown(
                 result_card(
-                    f"{label_dictionary[svm_prediction]}", "Linear SVM", non_diabetic = (svm_prediction == 0)), unsafe_allow_html=True)
+                    f"{label_dictionary[int(svm_prediction)]}",
+                    "Linear SVM",
+                    non_diabetic=(int(svm_prediction) == 0)
+                ),
+                unsafe_allow_html=True
+            )
+
 
 elif selected == "Model Comparison":
     st.title("Your Comparison against others")
-    #df = pd.read_csv("C:/Users/gsnov/Downloads/diabetes_dataset.csv")
-    X, y, feature_names = load_and_preprocess_data('C:/Users/gsnov/Downloads/diabetes_dataset.csv')
+    #df = pd.read_csv("C:/Users/anvis/Downloads/diabetes_dataset.csv")
+    X, y, feature_names = load_and_preprocess_data("C:/Users/anvis/Downloads/diabetes_dataset.csv")
     X = scale(X, scaler_value)
     patients_lr_prediction = lr_model.predict_proba(X)
     if "user_input" in st.session_state:
@@ -114,7 +135,10 @@ elif selected == "Model Comparison":
 
 elif selected == "Feature Importance":
     st.title("Feature Importance")
-    weights = lr_model.weights[1:len(feature_names)+1]
+    weights = lr_model.weights.flatten()  # ensure 1D
+    # If it includes bias/intercept, skip it
+    if len(weights) == len(feature_names) + 1:
+        weights = weights[1:]
     feature_dataframe = pd.DataFrame({
         "Feature": feature_names,
         "Weight": weights,
@@ -132,9 +156,10 @@ elif selected == "Feature Importance":
     st.altair_chart(chart, use_container_width=True)
     st.dataframe(feature_dataframe)
 
+
 elif selected == "BMI by Race":
     st.title("BMI Visualization")
-    df = pd.read_csv("C:/Users/gsnov/Downloads/diabetes_dataset.csv")
+    df = pd.read_csv("C:/Users/anvis/Downloads/diabetes_dataset.csv")
     race_cols = ['race:AfricanAmerican', 'race:Asian', 'race:Caucasian', 'race:Hispanic', 'race:Other']
     available_race_cols = [col for col in race_cols if col in df.columns]
     def get_race(row):
@@ -145,7 +170,7 @@ elif selected == "BMI by Race":
 
     if available_race_cols:
         df['race'] = df.apply(get_race, axis=1)
-        df = df.drop(columns=available_race_cols)  
+        df = df.drop(columns=available_race_cols)
     bmi_plotting_data_with_race = (df.groupby("year", group_keys=False).apply(lambda x: x.sample(min(len(x), 625), random_state=42)))
 
     
