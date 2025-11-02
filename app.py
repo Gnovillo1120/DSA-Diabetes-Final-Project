@@ -73,16 +73,21 @@ if selected == "Diabetes Risk Calculator":
 
     #stuff the button will do
     if st.button("Calculate Risk"):
-        gender_correspondance = {"Female": 0, "Male": 1, "Other": 2}
-        smoking_correspondance = {"Never": 0, "Former": 1, "Current": 2, "No Information": 3}
-        user_info = [1, gender_correspondance[gender], age, hypertension, heart_disease, smoking_correspondance[smoking], bmi, h1ba1c, glucose, 0, 0, 0, 0, 0]
+        gender_options = {"Female": 0, "Male": 1, "Other": 2}
+        smoking_options = {"Never": 0, "Former": 1, "Current": 2, "No Information": 3}
 
-        formated_array = np.array(user_info).reshape(1, -1)
-        formated_array = scale(formated_array, scaler_value)
+        user_info = {
+            'age': age, 'bmi': bmi, 'hbA1c_level': h1ba1c, 'blood_glucose_level': glucose, 'hypertension': hypertension, 'heart_disease': heart_disease,
+            'race:AfricanAmerican': 0, 'race:Asian': 0, 'race:Caucasian': 0, 'race:Hispanic': 0, 'race:Other': 0, 'gender': gender_options[gender], 'smoking_history': smoking_options[smoking],
+        }
+        user_input = np.array(list(user_info.values()), dtype=float).reshape(1, -1)
+        user_input_scaled = scale(user_input, scaler_value)
+        formated_array = np.hstack([np.ones((user_input_scaled.shape[0], 1)), user_input_scaled])
         st.session_state["user_input"] = formated_array
-
         linear_regression_probability = lr_model.predict_proba(formated_array)[0]
         linear_regression_prediction = lr_model.predict(formated_array)[0]
+
+        svm_probability = svm_model.predict_proba(formated_array)[0]
         svm_prediction = svm_model.predict(formated_array)[0]
 
         st.subheader("Prediction Results: ")
@@ -103,6 +108,8 @@ elif selected == "Model Comparison":
     #df = pd.read_csv("C:/Users/gsnov/Downloads/diabetes_dataset.csv")
     X, y, feature_names = load_and_preprocess_data('C:/Users/gsnov/Downloads/diabetes_dataset.csv')
     X = scale(X, scaler_value)
+    X = np.hstack([np.ones((X.shape[0], 1)), X])
+
     patients_lr_prediction = lr_model.predict_proba(X)
     if "user_input" in st.session_state:
         user_probability = lr_model.predict_proba(st.session_state["user_input"])[0]
@@ -114,7 +121,7 @@ elif selected == "Model Comparison":
 
 elif selected == "Feature Importance":
     st.title("Feature Importance")
-    weights = lr_model.weights[1:len(feature_names)+1]
+    weights = lr_model.weights
     feature_dataframe = pd.DataFrame({
         "Feature": feature_names,
         "Weight": weights,
