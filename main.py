@@ -1,333 +1,223 @@
-
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.naive_bayes import GaussianNB
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
+from sklearn.metrics import mean_squared_error
 
-def load_and_preprocess_data(filename): #in summary, load the data, convernts inputs to numeric, dropps useless columns such as year, makes NAN 0, and creates a feature Matrix X and label Y
-    df = pd.read_csv("C:/Users/gsnov/Downloads/diabetes_dataset.csv")
-
-    print("Dataset shape:", df.shape) #ensuring the data set is properly loaded
-    print("Columns:", df.columns.tolist())
-    print("\nFirst few rows:")
-    print(df.head())
-
-    df = df.copy()
-
-    numeric_columns = ['age', 'bmi', 'hbA1c_level', 'blood_glucose_level']
-    for col in numeric_columns:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce') #force changes columns to numeric, turning to NAN is missing
-
-    if 'gender' in df.columns: #sets females to 0, males to 1, others to 2
-        df['gender'] = df['gender'].astype(str)
-        df['gender'] = df['gender'].map({'Female': 0, 'Male': 1, 'Other': 2}).fillna(2)
-
-    if 'smoking_history' in df.columns: #sets never to 0, former to 1, current to 2, no info to 3
-        df['smoking_history'] = df['smoking_history'].astype(str)
-        df['smoking_history'] = df['smoking_history'].map({
-            'never': 0, 'former': 1, 'current': 2, 'No Info': 3, 'no info': 3
-        }).fillna(3)
-
-    #lines 30 to 47 ensure columns exist, drop year because its not revelant, and sets NAN to 0.
-    feature_columns = [
-        'gender', 'age', 'hypertension', 'heart_disease', 'smoking_history',
-        'bmi', 'hbA1c_level', 'blood_glucose_level',
-        'race:AfricanAmerican', 'race:Asian', 'race:Caucasian', 'race:Hispanic', 'race:Other'
-    ]
-
-    feature_columns = [col for col in feature_columns if col in df.columns]
-
-    if 'year' in df.columns:
-        df = df.drop('year', axis=1)
-
-    df = df.fillna(0)
-    #creates matrix of features X (inputs turned numeric) and Labels y (yes or not diabetic)
-    for col in feature_columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    df = df.fillna(0)
-
-    X = df[feature_columns].values.astype(np.float64)
-    y = df['diabetes'].values.astype(np.float64)
-
-    X = np.column_stack([np.ones(X.shape[0]), X])
-
-    print(f"\nFinal feature matrix shape: {X.shape}")
-    print(f"Number of features (including intercept): {X.shape[1]}")
-    print(f"Target distribution: {np.sum(y)} positive out of {len(y)} samples ({np.mean(y) * 100:.2f}%)")
-
-    return X, y, feature_columns
-
-def train_test_split(X, y, test_size=0.5, random_state=42): #makes unbias training sets
+def train_test_split(X, y, test_size=0.5, random_state=42):
     np.random.seed(random_state)
     n = X.shape[0]
-    indices = np.random.permutation(n) #creates random order of indeces to ensure distinct splits each time
-    split_idx = int(n * (1 - test_size)) #gets point to split
-
-    #splits
-    train_idx = indices[:split_idx] 
+    indices = np.random.permutation(n)
+    split_idx = int(n * (1 - test_size))
+    train_idx = indices[:split_idx]
     test_idx = indices[split_idx:]
-    #Makes the sets
-    X_train, X_test = X[train_idx], X[test_idx]
-    y_train, y_test = y[train_idx], y[test_idx]
+    return X[train_idx], X[test_idx], y[train_idx], y[test_idx]
 
-    return X_train, X_test, y_train, y_test
 
-def standardize_features(X_train, X_test): #makes stander unit for all given that each row has differnt input sizes
-    X_train_std = X_train.copy().astype(np.float64)
-    X_test_std = X_test.copy().astype(np.float64)
-    means = {}
-    stds = {}
+def standardize_features(X_train, X_test):
+    X_train_std = X_train.copy()
+    X_test_std = X_test.copy()
+    means = np.mean(X_train[:, 1:], axis=0)  # exclude intercept column
+    stds = np.std(X_train[:, 1:], axis=0)
+    stds[stds == 0] = 1  # avoid divide by zero
 
-    continuous_indices = [2, 6, 7, 8] #age, bmi, hbA1c_level, blood_glucose_level
+    X_train_std[:, 1:] = (X_train[:, 1:] - means) / stds
+    X_test_std[:, 1:] = (X_test[:, 1:] - means) / stds
 
-    for idx in continuous_indices:
-        if idx < X_train.shape[1]:
-            mean = np.mean(X_train[:, idx]) #get mean
-            std = np.std(X_train[:, idx]) #get standard deviation
-            means[idx] = mean
-            stds[idx] = std
-            if std > 0:
-                X_train_std[:, idx] = (X_train[:, idx] - mean) / std #turns it into scaled value (math formula)
-                X_test_std[:, idx] = (X_test[:, idx] - mean) / std #turns it into scaled value (math formula
+    scaler_value = {'means': means, 'stds': stds}  # for transparency or reuse
 
-    return X_train_std, X_test_std, (means, stds)
+    return X_train_std, X_test_std, scaler_value
+
+
 
 class LogisticRegression:
-    def __init__(self, learning_rate=0.01, max_iter=1000, tol=1e-4):
+    def __init__(self, learning_rate=0.1, max_iter=2000, tol=1e-6):
         self.learning_rate = learning_rate
         self.max_iter = max_iter
         self.tol = tol
         self.weights = None
-        self.loss_history = []
 
-    def sigmoid(self, z): #formula for linear output as probability (squishes values)
-        z = np.asarray(z, dtype=np.float64)
-        z_clipped = np.clip(z, -250, 250)
-        return 1.0 / (1.0 + np.exp(-z_clipped))
+    def sigmoid(self, z):
+        z = np.clip(z, -250, 250)
+        return 1.0 / (1.0 + np.exp(-z))
 
-    def compute_loss(self, X, y): #computes loss for logistic regression (how wrong it is)
-        z = X @ self.weights
-        predictions = self.sigmoid(z)
-        epsilon = 1e-15
-        predictions = np.clip(predictions, epsilon, 1 - epsilon)
-        loss = -np.mean(y * np.log(predictions) + (1 - y) * np.log(1 - predictions))
-        return loss
-
-    def fit(self, X, y): #training loop
-        X = X.astype(np.float64)
-        y = y.astype(np.float64)
-
+    def fit(self, X, y):
         n_samples, n_features = X.shape
-        self.weights = np.zeros(n_features, dtype=np.float64)
-
-        print(f"Starting Logistic Regression training with {n_features} features...")
-
-        for i in range(self.max_iter): #gets gradient and adjusts weights
+        self.weights = np.zeros(n_features)
+        prev_loss = float('inf')
+        for i in range(self.max_iter):
             z = X @ self.weights
-            predictions = self.sigmoid(z)
-
-            gradient = (X.T @ (predictions - y)) / n_samples
+            preds = self.sigmoid(z)
+            gradient = (X.T @ (preds - y)) / n_samples
             self.weights -= self.learning_rate * gradient
-
-            if i % 100 == 0:
-                loss = self.compute_loss(X, y)
-                self.loss_history.append(loss)
-
-            if len(self.loss_history) > 1 and abs(self.loss_history[-1] - self.loss_history[-2]) < self.tol:
-                print(f"Logistic Regression converged at iteration {i}")
+            # Compute loss for convergence check
+            preds = np.clip(preds, 1e-15, 1 - 1e-15)
+            loss = -np.mean(y * np.log(preds) + (1 - y) * np.log(1 - preds))
+            if abs(prev_loss - loss) < self.tol:
                 break
+            prev_loss = loss
 
-            if i % 500 == 0:
-                loss = self.compute_loss(X, y)
-                print(f"Iteration {i}, Loss: {loss:.4f}")
-
-    def predict_proba(self, X): #given X, gets us the probability
-        X = X.astype(np.float64)
+    def predict_proba(self, X):
         return self.sigmoid(X @ self.weights)
 
-    def predict(self, X, threshold=0.5): #condition to considering something diabetic or not based on threshold
-        return (self.predict_proba(X) >= threshold).astype(int)
-
-class LinearSVM: #draws a boundry between diabetic and non diabetic
-    def __init__(self, learning_rate=0.001, lambda_param=0.01, max_iter=1000, tol=1e-4):
+class LinearSVM:
+    def __init__(self, learning_rate=0.001, lambda_param=0.01, max_iter=2000, tol=1e-6):
         self.learning_rate = learning_rate
         self.lambda_param = lambda_param
         self.max_iter = max_iter
         self.tol = tol
         self.weights = None
-        self.loss_history = []
 
     def fit(self, X, y):
-        X = X.astype(np.float64)
-        y = y.astype(np.float64)
         y_svm = 2 * y - 1
-
         n_samples, n_features = X.shape
-        self.weights = np.zeros(n_features, dtype=np.float64)
-
-        print(f"Starting SVM training with {n_features} features...")
+        self.weights = np.zeros(n_features)
+        prev_loss = float('inf')
 
         for i in range(self.max_iter):
             margins = y_svm * (X @ self.weights)
             hinge_loss = np.maximum(0, 1 - margins)
-
             misclassified = margins < 1
-            subgradient = np.zeros(n_features, dtype=np.float64)
-            if np.sum(misclassified) > 0:
-                subgradient = -np.sum(X[misclassified] * y_svm[misclassified, np.newaxis], axis=0)
-                subgradient /= n_samples
+            if np.any(misclassified):
+                subgrad = -np.sum(X[misclassified] * y_svm[misclassified, None], axis=0) / n_samples
+            else:
+                subgrad = np.zeros(n_features)
+            reg_grad = self.lambda_param * self.weights
+            gradient = reg_grad + subgrad
+            self.weights -= self.learning_rate * gradient
 
-            reg_gradient = self.lambda_param * self.weights
-            gradient = reg_gradient + subgradient
-
-            new_weights = self.weights - self.learning_rate * gradient
-
-            hinge_loss_total = np.mean(hinge_loss)
-            reg_loss = 0.5 * self.lambda_param * np.sum(self.weights ** 2)
-            total_loss = hinge_loss_total + reg_loss
-
-            if i % 100 == 0:
-                self.loss_history.append(total_loss)
-
-            if len(self.loss_history) > 1 and abs(self.loss_history[-1] - self.loss_history[-2]) < self.tol:
-                print(f"SVM converged at iteration {i}")
+            loss = np.mean(hinge_loss) + 0.5 * self.lambda_param * np.sum(self.weights ** 2)
+            if abs(prev_loss - loss) < self.tol:
                 break
+            prev_loss = loss
 
-            if i % 500 == 0:
-                print(f"Iteration {i}, Loss: {total_loss:.4f}")
+    def predict_proba(self, X):
+        decision = X @ self.weights
+        return 1 / (1 + np.exp(-decision))
 
-            self.weights = new_weights
+def mean_squared_error(y_true, y_pred):
+    return np.mean((y_true - y_pred) ** 2)
 
-    def predict(self, X):
-        X = X.astype(np.float64)
-        return (X @ self.weights >= 0).astype(int)
 
-def accuracy_score(y_true, y_pred):
-    return np.mean(y_true == y_pred)
+def load_and_preprocess_data(filename):
+    df = pd.read_csv(filename)
 
-def error_rate(y_true, y_pred):
-    return 1 - accuracy_score(y_true, y_pred)
+    cat_columns = ['gender', 'smoking_history']
+    for col in cat_columns:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+            if col == 'gender':
+                df[col] = df[col].map({'Female': 0, 'Male': 1, 'Other': 2}).fillna(2)
+            else:  # smoking_history
+                df[col] = df[col].map({'never': 0, 'former': 1, 'current': 2, 'No Info': 3, 'no info': 3}).fillna(3)
 
-def confusion_matrix(y_true, y_pred):
-    tp = np.sum((y_true == 1) & (y_pred == 1))
-    tn = np.sum((y_true == 0) & (y_pred == 0))
-    fp = np.sum((y_true == 0) & (y_pred == 1))
-    fn = np.sum((y_true == 1) & (y_pred == 0))
-    return np.array([[tn, fp], [fn, tp]])
+    numeric_cols = ['age', 'bmi', 'hbA1c_level', 'blood_glucose_level',
+                    'hypertension', 'heart_disease',
+                    'race:AfricanAmerican', 'race:Asian', 'race:Caucasian', 'race:Hispanic', 'race:Other']
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
-def classification_report(y_true, y_pred):
-    cm = confusion_matrix(y_true, y_pred)
-    tn, fp, fn, tp = cm[0, 0], cm[0, 1], cm[1, 0], cm[1, 1]
+    if 'year' in df.columns:
+        df = df.drop('year', axis=1)
 
-    accuracy = (tp + tn) / (tp + tn + fp + fn)
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
+    feature_cols = [col for col in numeric_cols + ['gender', 'smoking_history'] if col in df.columns]
 
-    return {
-        'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1_score': f1,
-        'confusion_matrix': cm
-    }
+    X = df[feature_cols].values
+    y = df['diabetes'].values
+
+    return X, y, feature_cols
+
+def evaluate_model(model, X_test, y_test):
+    # Try predict_proba, then decision_function, else fallback to predict
+    try:
+        probs = model.predict_proba(X_test)[:, 1]
+    except AttributeError:
+        try:
+            decision = model.decision_function(X_test)
+            probs = 1 / (1 + np.exp(-decision))
+        except AttributeError:
+            preds = model.predict(X_test)
+            probs = preds  # not probabilities
+    mse = mean_squared_error(y_test, probs)
+    return mse, probs
 
 def main():
-    try:
-        X, y, feature_names = load_and_preprocess_data('diabetes_dataset.csv')
+    # Load data
+    X, y, features = load_and_preprocess_data("C:/Users/anvis/Downloads/diabetes_dataset.csv")
 
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, random_state=42)
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, random_state=42)
 
+    # Standardize features
+    X_train_std, X_test_std = standardize_features(X_train, X_test)
 
-        X_train_std, X_test_std,_ = standardize_features(X_train, X_test) #LINE TO CHECK
+    # Initialize and train your hand-coded models
+    lr = LogisticRegression(learning_rate=0.1, max_iter=2000, tol=1e-6)
+    lr.fit(X_train_std, y_train)
+    mse_lr = mean_squared_error(y_test, lr.predict_proba(X_test_std))
 
-        print(f"\nTraining set size: {X_train.shape[0]}")
-        print(f"Test set size: {X_test.shape[0]}")
-        print(f"Positive cases in training: {np.sum(y_train)}/{len(y_train)} ({np.mean(y_train) * 100:.2f}%)")
-        print(f"Positive cases in test: {np.sum(y_test)}/{len(y_test)} ({np.mean(y_test) * 100:.2f}%)")
+    svm = LinearSVM(learning_rate=0.001, lambda_param=0.01, max_iter=2000, tol=1e-6)
+    svm.fit(X_train_std, y_train)
+    decision = X_test_std @ svm.weights
+    probs_svm = 1 / (1 + np.exp(-decision))
+    mse_svm = mean_squared_error(y_test, probs_svm)
 
-        print("\n" + "=" * 60)
-        print("TRAINING LOGISTIC REGRESSION")
-        print("=" * 60)
+    # Scikit-learn models
+    sklearn_models = {
+        'kNN': KNeighborsClassifier(n_neighbors=5),
+        'RBF SVM': SVC(kernel='rbf', gamma='scale', probability=True, random_state=42),
+        'Naive Bayes': GaussianNB(),
+        'LDA': LinearDiscriminantAnalysis(),
+        'QDA': QuadraticDiscriminantAnalysis()
+    }
+    sklearn_mse = {}
+    for name, model in sklearn_models.items():
+        model.fit(X_train_std, y_train)
+        mse, _ = evaluate_model(model, X_test_std, y_test)
+        sklearn_mse[name] = mse
 
-        lr = LogisticRegression(learning_rate=0.1, max_iter=2000, tol=1e-6)
-        lr.fit(X_train_std, y_train)
+    # Combine all results
+    all_results = {'Logistic Regression': mse_lr, 'Linear SVM': mse_svm}
+    all_results.update(sklearn_mse)
 
-        print("\n" + "=" * 60)
-        print("TRAINING LINEAR SVM")
-        print("=" * 60)
+    # Print all MSEs
+    print("\nModel Mean Squared Errors:")
+    for name, mse in all_results.items():
+        print(f"{name}: {mse:.6f}")
 
-        svm = LinearSVM(learning_rate=0.001, lambda_param=0.01, max_iter=2000, tol=1e-6)
-        svm.fit(X_train_std, y_train)
+    # Determine best model
+    best_model_name = min(all_results, key=all_results.get)
+    print(f"\nBest model by MSE: {best_model_name}")
 
-        y_pred_lr = lr.predict(X_test_std)
-        y_pred_svm = svm.predict(X_test_std)
-
-        print("\n" + "=" * 60)
-        print("MODEL COMPARISON")
-        print("=" * 60)
-
-        lr_error = error_rate(y_test, y_pred_lr)
-        lr_report = classification_report(y_test, y_pred_lr)
-
-        print("\nLOGISTIC REGRESSION RESULTS:")
-        print(f"Test Error Rate: {lr_error:.4f}")
-        print(f"Accuracy: {lr_report['accuracy']:.4f}")
-        print(f"Precision: {lr_report['precision']:.4f}")
-        print(f"Recall: {lr_report['recall']:.4f}")
-        print(f"F1-Score: {lr_report['f1_score']:.4f}")
-        print(f"Confusion Matrix:")
-        print(lr_report['confusion_matrix'])
-
-        svm_error = error_rate(y_test, y_pred_svm)
-        svm_report = classification_report(y_test, y_pred_svm)
-
-        print("\nLINEAR SVM RESULTS:")
-        print(f"Test Error Rate: {svm_error:.4f}")
-        print(f"Accuracy: {svm_report['accuracy']:.4f}")
-        print(f"Precision: {svm_report['precision']:.4f}")
-        print(f"Recall: {svm_report['recall']:.4f}")
-        print(f"F1-Score: {svm_report['f1_score']:.4f}")
-        print(f"Confusion Matrix:")
-        print(svm_report['confusion_matrix'])
-
-        print("\n" + "=" * 60)
-        print("COMPARISON SUMMARY")
-        print("=" * 60)
-
-        if lr_error < svm_error:
-            print("Logistic Regression performs better")
-            improvement = ((svm_error - lr_error) / svm_error) * 100
-            print(f"Improvement: {improvement:.2f}%")
-        elif svm_error < lr_error:
-            print("Linear SVM performs better")
-            improvement = ((lr_error - svm_error) / lr_error) * 100
-            print(f"Improvement: {improvement:.2f}%")
+    # Print coefficients / feature importances for best model
+    print("\nFeature coefficients (or importance) for best model:")
+    if best_model_name == 'Logistic Regression':
+        coefs = lr.weights
+        feature_names = ['Intercept'] + features
+        for feat, coef in zip(feature_names, coefs):
+            print(f"{feat}: {coef:.6f}")
+    elif best_model_name == 'Linear SVM':
+        coefs = svm.weights
+        feature_names = ['Intercept'] + features
+        for feat, coef in zip(feature_names, coefs):
+            print(f"{feat}: {coef:.6f}")
+    else:
+        best_model = sklearn_models[best_model_name]
+        feature_names = features
+        if hasattr(best_model, 'coef_'):
+            coefs = best_model.coef_.ravel()
+            for feat, coef in zip(feature_names, coefs):
+                print(f"{feat}: {coef:.6f}")
+        elif hasattr(best_model, 'feature_log_prob_'):  # Naive Bayes
+            coefs = best_model.feature_log_prob_[1] - best_model.feature_log_prob_[0]
+            for feat, coef in zip(feature_names, coefs):
+                print(f"{feat}: {coef:.6f}")
         else:
-            print("Both models perform equally well")
-
-        print("\n" + "=" * 60)
-        print("FEATURE IMPORTANCE ANALYSIS")
-        print("=" * 60)
-
-        feature_importance = np.abs(lr.weights[1:])
-        importance_df = pd.DataFrame({
-            'Feature': feature_names,
-            'Weight': lr.weights[1:len(feature_names) + 1],
-            'Absolute_Importance': np.abs(lr.weights[1:len(feature_names) + 1])
-        }).sort_values('Absolute_Importance', ascending=False)
-
-        print("Top 10 Most Important Features:")
-        print(importance_df.head(10).to_string(index=False))
-
-        print(f"\nFinal Comparison:")
-        print(f"Logistic Regression Error Rate: {lr_error:.4f}")
-        print(f"Linear SVM Error Rate: {svm_error:.4f}")
-
-    except Exception as e:
-        print(f"Error occurred: {e}")
-        import traceback
-        traceback.print_exc()
+            print("No coefficient information available")
 
 if __name__ == "__main__":
-        main()
+    main()
