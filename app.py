@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 from streamlit_option_menu import option_menu
 import pickle
@@ -13,14 +14,18 @@ from sklearn.svm import SVC
 from sklearn.naive_bayes import GaussianNB
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 
-# Load your custom models
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(BASE_DIR, "data", "diabetes_dataset.csv")
+df = pd.read_csv(data_path)
+
+# Loads our models
 with open("logistic_regression_model.pkl", "rb") as f:
     lr_model, feature_names, scaler_value = pickle.load(f)
 
 with open("svm_model.pkl", "rb") as f:
     svm_model, _, _ = pickle.load(f)
 
-
+# Scales for equal model starting points
 def scale(user, scaler_val):
     means, stds = scaler_val
     for idx, mean in means.items():
@@ -29,7 +34,7 @@ def scale(user, scaler_val):
             user[:, idx] = (user[:, idx] - mean) / std
     return user
 
-
+# Makes visual for whether diabetic or not
 def result_card(value, title, non_diabetic=True):
     if non_diabetic:
         color = "#e6fffa"
@@ -49,8 +54,7 @@ def result_card(value, title, non_diabetic=True):
     return html_card
 
 
-def train_sklearn_models(X_train_std, X_test_std, y_train, y_test):
-    """Train and return sklearn models with their predictions"""
+def train_sklearn_models(X_train_std, X_test_std, y_train, y_test): #Trains SKL models
     sklearn_models = {
         'kNN': KNeighborsClassifier(n_neighbors=5),
         'RBF SVM': SVC(kernel='rbf', gamma='scale', probability=True, random_state=42),
@@ -71,15 +75,14 @@ def train_sklearn_models(X_train_std, X_test_std, y_train, y_test):
     return model_results, sklearn_models
 
 
-st.sidebar.title("Diabetes Prediction Dashboard")
+st.sidebar.title("Diabetes Prediction Dashboard") #Main visuals for app
 with st.sidebar:
     selected = option_menu(
         menu_title="Main Menu",
-        options=["Diabetes Risk Calculator", "Model Comparison", "Feature Importance", "BMI by Race"]
+        options=["Diabetes Risk Calculator", "Model Comparison", "Feature Importance", "BMI by Race"] # Tab titles
     )
 
-if selected == "Diabetes Risk Calculator":
-    # Your existing Diabetes Risk Calculator code remains the same
+if selected == "Diabetes Risk Calculator": #Visual set up and user intake for calculator
     st.title("Diabetes Risk Calculator")
     gender = st.selectbox("Gender", options=["Male", "Female", "Other"])
     age = st.number_input("Age", min_value=0, max_value=125, value=30)
@@ -110,13 +113,13 @@ if selected == "Diabetes Risk Calculator":
             'gender': gender_options[gender],
             'smoking_history': smoking_options[smoking],
         }
-        user_input = np.array(list(user_info.values()), dtype=float).reshape(1, -1)
+        user_input = np.array(list(user_info.values()), dtype=float).reshape(1, -1) #Takes in user input
         user_input_scaled = scale(user_input, scaler_value)
         formated_array = np.hstack([np.ones((user_input_scaled.shape[0], 1)), user_input_scaled])
         st.session_state["user_input"] = formated_array
 
-        linear_regression_probability = lr_model.predict_proba(formated_array)[0]
-        linear_regression_prediction = lr_model.predict(formated_array)[0]
+        log_regression_probability = lr_model.predict_proba(formated_array)[0] #Evaluates based on Logistic and svm
+        log_regression_prediction = lr_model.predict(formated_array)[0]
         svm_probability = svm_model.predict_proba(formated_array)[0]
         svm_prediction = svm_model.predict(formated_array)[0]
 
@@ -126,9 +129,9 @@ if selected == "Diabetes Risk Calculator":
         with col1:
             st.markdown(
                 result_card(
-                    f"{label_dictionary[linear_regression_prediction]}",
+                    f"{label_dictionary[log_regression_prediction]}",
                     "Logistic Regression",
-                    non_diabetic=(linear_regression_prediction == 0)),
+                    non_diabetic=(log_regression_prediction == 0)),
                 unsafe_allow_html=True)
         with col2:
             st.markdown(
@@ -243,7 +246,7 @@ elif selected == "Model Comparison":
         st.info("Please run `precomputed_models.py` first to generate the comparison data.")
 
 elif selected == "Feature Importance":
-    st.title("Feature Importance")
+    st.title("Feature Importance in Logistic Regression")
     weights = lr_model.weights
     feature_dataframe = pd.DataFrame({
         "Feature": feature_names,
@@ -266,7 +269,7 @@ elif selected == "Feature Importance":
 
 elif selected == "BMI by Race":
     st.title("BMI Visualization")
-    df = pd.read_csv("C:/Users/anvis/Downloads/diabetes_dataset.csv")
+    df = pd.read_csv(data_path)
     race_cols = ['race:AfricanAmerican', 'race:Asian', 'race:Caucasian', 'race:Hispanic', 'race:Other']
     available_race_cols = [col for col in race_cols if col in df.columns]
 

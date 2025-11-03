@@ -1,3 +1,4 @@
+import os
 import pickle
 import numpy as np
 import pandas as pd
@@ -10,13 +11,17 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 import warnings
 
 warnings.filterwarnings('ignore')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(BASE_DIR, "data", "diabetes_dataset.csv")
+df = pd.read_csv(data_path)
+
 
 # All of these models use Library Scikit Learn in order to generate a model prediction to look at other potential models
 # that we did not implement on our own. This is just for a nice comparison to other models that are out there in statistical
 # learning. The main function of this script pre-calculates the model before it is presented and ranked and visually
 # compared in app.py's 'Model Comparison' tab. Our own models that we implemented are also included, seen below.
 def precompute_model_comparison():
-    X, y, feature_names = load_and_preprocess_data("C:/Users/anvis/Downloads/diabetes_dataset.csv")
+    X, y, feature_names = load_and_preprocess_data(data_path)
 
     # Use smaller subset for faster computation if dataset is large
     if len(X) > 10000:

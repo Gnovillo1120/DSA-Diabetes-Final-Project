@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -6,8 +7,11 @@ from sklearn.svm import SVC
 from sklearn.naive_bayes import GaussianNB
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.metrics import mean_squared_error
-
 #Hello! Here is where the main set up is going to be. We are splitting our 100K rows of data in half, one half for training and one half for testing. This is known as the validation set approach in statistics in which we train the model and then our results to pick the better algorithm will be based off of the accuracy, you could say, that is performed on the testing data. We did a random split for this halving.
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(BASE_DIR, "data", "diabetes_dataset.csv")
+df = pd.read_csv(data_path)
 
 def train_test_split(X, y, test_size=0.5, random_state=42):
     np.random.seed(random_state)
@@ -174,8 +178,7 @@ def evaluate_model(model, X_test, y_test): # Puts it all together! Yahoo!
 
 
 def main():
-    X, y, features = load_and_preprocess_data("C:/Users/anvis/Downloads/diabetes_dataset.csv")
-
+    X, y, features = load_and_preprocess_data(data_path)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, random_state=42)
 
     X_train_std, X_test_std, (means, stds)= standardize_features(X_train, X_test)
