@@ -8,7 +8,7 @@ import altair as alt
 import plotly.express as px
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
-from main import load_and_preprocess_data, train_test_split, standardize_features
+from main import load_and_preprocess_data, custom_train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.naive_bayes import GaussianNB
@@ -16,23 +16,49 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticD
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 data_path = os.path.join(BASE_DIR, "data", "diabetes_dataset.csv")
-df = pd.read_csv(data_path)
 
-# Loads our models
-with open("logistic_regression_model.pkl", "rb") as f:
-    lr_model, feature_names, scaler_value = pickle.load(f)
+    # Load data and scaler from main.py
+X, y, feature_names, scaler_value = load_and_preprocess_data(data_path)
 
-with open("svm_model.pkl", "rb") as f:
-    svm_model, _, _ = pickle.load(f)
+    # Load models with error handling
+try:
+    with open("logistic_regression_model.pkl", "rb") as f:
+        lr_data = pickle.load(f)
+        if isinstance(lr_data, tuple):
+            if len(lr_data) == 3:
+                lr_model, lr_feature_names, lr_scaler = lr_data
+            else:
+                lr_model, lr_feature_names = lr_data
+        else:  # Dictionary format
+            lr_model = lr_data['model']
+            lr_feature_names = lr_data['feature_names']
+except FileNotFoundError:
+    st.error("Logistic Regression model not found. Please run train_models.py first.")
+    lr_model, lr_feature_names = None, None
 
-# Scales for equal model starting points
-def scale(user, scaler_val):
-    means, stds = scaler_val
-    for idx, mean in means.items():
-        std = stds[idx]
-        if std > 0:
-            user[:, idx] = (user[:, idx] - mean) / std
-    return user
+try:
+    with open("svm_model.pkl", "rb") as f:
+        svm_data = pickle.load(f)
+        if isinstance(svm_data, tuple):
+            if len(svm_data) == 3:
+                svm_model, svm_feature_names, svm_scaler = svm_data
+            else:
+                svm_model, svm_feature_names = svm_data
+        else:  # Dictionary format
+            svm_model = svm_data['model']
+            svm_feature_names = svm_data['feature_names']
+except FileNotFoundError:
+    st.error("SVM model not found. Please run train_models.py first.")
+    svm_model, svm_feature_names = None, None
+
+    # Use the scaler from main.py for scaling new inputs
+def scale(input_data, scaler):
+    if scaler is not None:
+        return scaler.transform(input_data)
+    else:
+        st.warning("No scaler found. Using raw data.")
+        return input_data
+
 
 # Makes visual for whether diabetic or not
 def result_card(value, title, non_diabetic=True):
@@ -244,27 +270,89 @@ elif selected == "Model Comparison":
 
     except FileNotFoundError:
         st.info("Please run `precomputed_models.py` first to generate the comparison data.")
-
 elif selected == "Feature Importance":
-    st.title("Feature Importance in Logistic Regression")
-    weights = lr_model.weights
-    feature_dataframe = pd.DataFrame({
-        "Feature": feature_names,
-        "Weight": weights,
-        "Absolute Weight": np.abs(weights)
-    }).sort_values(by="Absolute Weight", ascending=False)
+        st.title("Feature Importance in Logistic Regression")
 
-    st.subheader("Features ranked by overall importance (+ and -)")
-    chart = (alt.Chart(feature_dataframe.head(10)).mark_bar().encode
-        (
-        x=alt.X("Feature", sort=None), y=alt.Y("Absolute Weight"), color=alt.condition(
-        alt.datum.Weight > 0, alt.value("green"), alt.value("red")
-    )
-    )
-    )
-    st.altair_chart(chart, use_container_width=True)
-    st.dataframe(feature_dataframe)
+        if lr_model is None:
+            st.error("Logistic Regression model not loaded.")
+        else:
+            weights = lr_model.weights
 
+            # Simple reliable approach
+            if lr_feature_names and len(lr_feature_names) == len(weights):
+                display_features = lr_feature_names
+            else:
+                # Use main.py features and handle intercept
+                if len(weights) == len(feature_names) + 1:
+                    display_features = ['intercept'] + feature_names
+                else:
+                    display_features = feature_names
+                    # If we're still short, pad with generic names
+                    while len(display_features) < len(weights):
+                        display_features.append(f'feature_{len(display_features)}')
+                    # If we have too many, truncate
+                    display_features = display_features[:len(weights)]
+
+            # Create the dataframe
+            feature_dataframe = pd.DataFrame({
+                "Feature": display_features,
+                "Weight": weights,
+                "Absolute Weight": np.abs(weights)
+            }).sort_values(by="Absolute Weight", ascending=False)
+
+            top_features = feature_dataframe.head(15)
+
+            # Create the chart with better formatting
+            chart = (alt.Chart(top_features).mark_bar().encode(
+                x=alt.X("Absolute Weight:Q", title="Importance (Absolute Weight)"),
+                y=alt.Y("Feature:N", sort='-x', title="Feature"),
+                color=alt.condition(
+                    alt.datum.Weight > 0,
+                    alt.value("#ff6b6b"),  # Red for positive
+                    alt.value("#4ecdc4")  # Green for negative
+                ),
+                tooltip=['Feature', 'Weight', 'Absolute Weight']
+            ).properties(
+                title="Top 15 Most Important Features for Diabetes Prediction",
+                height=400
+            ))
+
+            st.altair_chart(chart, use_container_width=True)
+
+            # Display detailed table
+            st.subheader("Detailed Feature Weights")
+
+            # Format the dataframe for better display
+            display_df = feature_dataframe.copy()
+            display_df['Weight'] = display_df['Weight'].round(6)
+            display_df['Absolute Weight'] = display_df['Absolute Weight'].round(6)
+            display_df['Impact'] = display_df['Weight'].apply(
+                lambda x: "🟥 Increases Risk" if x > 0 else "🟩 Decreases Risk" if x < 0 else "⚪ Neutral"
+            )
+
+            # Reorder columns for better readability
+            display_df = display_df[['Feature', 'Weight', 'Absolute Weight', 'Impact']]
+
+            st.dataframe(display_df, use_container_width=True)
+
+            # Show summary statistics
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                positive_count = len(feature_dataframe[feature_dataframe['Weight'] > 0])
+                st.metric("🟥 Risk Factors", positive_count)
+
+            with col2:
+                negative_count = len(feature_dataframe[feature_dataframe['Weight'] < 0])
+                st.metric("🟩 Protective Factors", negative_count)
+
+            with col3:
+                top_feature = feature_dataframe.iloc[0]['Feature']
+                top_weight = feature_dataframe.iloc[0]['Weight']
+                st.metric("🏆 Most Important", top_feature)
+
+            with col4:
+                st.metric("📊 Total Features", len(feature_dataframe))
 
 
 elif selected == "BMI by Race":

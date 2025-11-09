@@ -2,7 +2,7 @@ import os
 import pickle
 import numpy as np
 import pandas as pd
-from main import load_and_preprocess_data, train_test_split, standardize_features
+from main import load_and_preprocess_data, custom_train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.naive_bayes import GaussianNB
@@ -21,23 +21,22 @@ df = pd.read_csv(data_path)
 # learning. The main function of this script pre-calculates the model before it is presented and ranked and visually
 # compared in app.py's 'Model Comparison' tab. Our own models that we implemented are also included, seen below.
 def precompute_model_comparison():
-    X, y, feature_names = load_and_preprocess_data(data_path)
+    X, y, feature_names, scaler = load_and_preprocess_data(data_path)
 
     # Use smaller subset for faster computation if dataset is large
     if len(X) > 10000:
         print("Large dataset detected, using subset for faster computation...")
-        X, _, y, _ = train_test_split(X, y, test_size=0.8, random_state=42)  # Use 20% of data
+        X, _, y, _ = custom_train_test_split(X, y, test_size=0.8, random_state=42)  # Use 20% of data
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, random_state=42)
-    X_train_std, X_test_std, _ = standardize_features(X_train, X_test)
+    X_train, X_test, y_train, y_test = custom_train_test_split(X, y, test_size=0.5, random_state=42)
 
     # OUR MODELS: Logistic and Linear SVM model train for comparison
     with open("logistic_regression_model.pkl", "rb") as f:
-        lr_model, feature_names, scaler_value = pickle.load(f)
+        lr_model, feature_names = pickle.load(f)
     with open("svm_model.pkl", "rb") as f:
-        svm_model, _, _ = pickle.load(f)
+        svm_model, feature_names = pickle.load(f)
 
-    X_test_std_with_intercept = np.hstack([np.ones((X_test_std.shape[0], 1)), X_test_std])
+    X_test_std_with_intercept = np.hstack([np.ones((X_test.shape[0], 1)), X_test])
 
     lr_probs = lr_model.predict_proba(X_test_std_with_intercept)
     svm_probs = svm_model.predict_proba(X_test_std_with_intercept)
@@ -57,21 +56,21 @@ def precompute_model_comparison():
         print(f"Training {name}...")
         try:
             if name == 'RBF SVM': #Radial SVM was taking a bit to load due to a larger training set and its own features
-                if len(X_train_std) > 5000: # This lowers the training set values a little for ease and pace
-                    sample_idx = np.random.choice(len(X_train_std), min(5000, len(X_train_std)), replace=False)
-                    X_train_subset = X_train_std[sample_idx]
+                if len(X_train) > 5000: # This lowers the training set values a little for ease and pace
+                    sample_idx = np.random.choice(len(X_train), min(5000, len(X_train)), replace=False)
+                    X_train_subset = X_train[sample_idx]
                     y_train_subset = y_train[sample_idx]
                     model.fit(X_train_subset, y_train_subset)
                 else:
-                    model.fit(X_train_std, y_train)
+                    model.fit(X_train, y_train)
             else:
-                model.fit(X_train_std, y_train)
+                model.fit(X_train, y_train)
 
             # Get predictions
             if hasattr(model, 'predict_proba'):
-                probs = model.predict_proba(X_test_std)[:, 1]
+                probs = model.predict_proba(X_test)[:, 1]
             else:
-                probs = model.predict(X_test_std)
+                probs = model.predict(X_test)
 
             sklearn_results[name] = probs
             print(f"   {name} completed successfully")

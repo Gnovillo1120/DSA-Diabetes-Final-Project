@@ -1,19 +1,19 @@
 import os
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.naive_bayes import GaussianNB
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.metrics import mean_squared_error
-#Hello! Here is where the main set up is going to be. We are splitting our 100K rows of data in half, one half for training and one half for testing. This is known as the validation set approach in statistics in which we train the model and then our results to pick the better algorithm will be based off of the accuracy, you could say, that is performed on the testing data. We did a random split for this halving.
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 data_path = os.path.join(BASE_DIR, "data", "diabetes_dataset.csv")
 df = pd.read_csv(data_path)
 
-def train_test_split(X, y, test_size=0.5, random_state=42):
+
+def custom_train_test_split(X, y, test_size=0.5, random_state=42):
     np.random.seed(random_state)
     n = X.shape[0]
     indices = np.random.permutation(n)
@@ -23,24 +23,6 @@ def train_test_split(X, y, test_size=0.5, random_state=42):
     return X[train_idx], X[test_idx], y[train_idx], y[test_idx]
 
 
-def standardize_features(X_train, X_test): # You can think of this function as equally scaling our methods for LR and LSVM!
-    X_train_std = X_train.copy().astype(np.float64)
-    X_test_std = X_test.copy().astype(np.float64)
-    means = {}
-    stds = {}
-    continuous_indices = [1, 5, 6, 7]  # age, bmi, hbA1c_level, blood_glucose_level
-    for idx in continuous_indices:
-        if idx < X_train.shape[1]:
-            mean = np.mean(X_train[:, idx])  # gets mean
-            std = np.std(X_train[:, idx])  # gets standard deviation
-            means[idx] = mean
-            stds[idx] = std
-            if std > 0:
-                X_train_std[:, idx] = (X_train[:, idx] - mean) / std  # turns it into scaled value (math formula)
-                X_test_std[:, idx] = (X_test[:, idx] - mean) / std  # turns it into scaled value (math formula
-    return X_train_std, X_test_std, (means, stds)
-
-
 class LogisticRegression:
     def __init__(self, learning_rate=0.01, max_iter=2000, tol=1e-6):
         self.learning_rate = learning_rate
@@ -48,26 +30,27 @@ class LogisticRegression:
         self.tol = tol
         self.weights = None
 
-    def sigmoid(self, z): # This is the main component of Logistic Regression, known as the Logit function!
+    def sigmoid(self, z):
         z = np.clip(z, -250, 250)
         return 1.0 / (1.0 + np.exp(-z))
 
-    def fit(self, X, y): # Here we are basically taking the coefs that we found from the sigmoid function and fitting them onto our model!
+    def fit(self, X, y):
         X = X.astype(np.float64)
         y = y.astype(np.float64)
+        X = np.hstack([np.ones((X.shape[0], 1)), X])
         n_samples, n_features = X.shape
         self.weights = np.zeros(n_features, dtype=np.float64)
         prev_loss = float('inf')
         lr = self.learning_rate
         print(f"Starting Logistic Regression training with {n_features} features...")
-        for i in range(self.max_iter):  # gets gradient and adjusts weights
+        for i in range(self.max_iter):
             z = X @ self.weights
             predictions = self.sigmoid(z)
 
             gradient = (X.T @ (predictions - y)) / n_samples
             self.weights -= lr * gradient
 
-            predictions = np.clip(predictions, 1e-15, 1 - 1e-15) # Now we can make predictions with the model!
+            predictions = np.clip(predictions, 1e-15, 1 - 1e-15)
             loss = -np.mean(y * np.log(predictions) + (1 - y) * np.log(1 - predictions))
             if loss > prev_loss * 1.5:
                 lr *= 0.5
@@ -80,15 +63,17 @@ class LogisticRegression:
             if i % 500 == 0:
                 print(f"Iteration {i}, Loss: {loss:.4f}")
 
-    def predict_proba(self, X): # The difference between this function and def predict is that this predicts the probaility of getting a 0 or 1 as this is a binary outcome model method.
-        return self.sigmoid(X @ self.weights) # Think of this as a probability of getting heads or tails! Can be 0.5, 0.420, 0.67????
+    def predict_proba(self, X):
+        X = np.hstack([np.ones((X.shape[0], 1)), X])
+        return self.sigmoid(X @ self.weights)
 
-    def predict(self, X): #This function will give you that binary outcome! Think heads/tails output
+    def predict(self, X, threshold=0.3, return_proba=False):
         prob = self.predict_proba(X)
-        return np.where(prob >= 0.5, 1, 0)
+        preds = np.where(prob >= threshold, 1, 0)
+        return (preds, prob) if return_proba else preds
 
 
-class LinearSVM: # SVM are known to also be binary outcome predictor models, but conceptually are supposed to be better with handling many features or predictors! Predictors are meant by age, gender, bmi, etc.
+class LinearSVM:
     def __init__(self, learning_rate=0.001, lambda_param=0.01, max_iter=2000, tol=1e-6):
         self.learning_rate = learning_rate
         self.lambda_param = lambda_param
@@ -96,7 +81,7 @@ class LinearSVM: # SVM are known to also be binary outcome predictor models, but
         self.tol = tol
         self.weights = None
 
-    def fit(self, X, y): # Linear SVM methodology! Not as easy to explain as logistic but it's here!
+    def fit(self, X, y):
         y_svm = 2 * y - 1
         n_samples, n_features = X.shape
         self.weights = np.zeros(n_features)
@@ -119,7 +104,7 @@ class LinearSVM: # SVM are known to also be binary outcome predictor models, but
                 break
             prev_loss = loss
 
-    def predict_proba(self, X): # Same difference for these two functions as there was for Logistic Reg!
+    def predict_proba(self, X):
         decision = X @ self.weights
         return 1 / (1 + np.exp(-decision))
 
@@ -128,11 +113,7 @@ class LinearSVM: # SVM are known to also be binary outcome predictor models, but
         return np.where(linear_output >= 0, 1, 0)
 
 
-def mean_squared_error(y_true, y_pred): #This is what we'll be testing on to compare which alg is better! Test error MSE :)
-    return np.mean((y_true - y_pred) ** 2)
-
-
-def load_and_preprocess_data(filename): #Data prep !
+def load_and_preprocess_data(filename):
     df = pd.read_csv(filename)
 
     cat_columns = ['gender', 'smoking_history']
@@ -147,54 +128,57 @@ def load_and_preprocess_data(filename): #Data prep !
     numeric_cols = ['age', 'bmi', 'hbA1c_level', 'blood_glucose_level',
                     'hypertension', 'heart_disease',
                     'race:AfricanAmerican', 'race:Asian', 'race:Caucasian', 'race:Hispanic', 'race:Other']
-    for col in numeric_cols:
+
+    # Create feature columns list
+    feature_cols = []
+    for col in numeric_cols + ['gender', 'smoking_history']:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-    if 'year' in df.columns:
-        df = df.drop('year', axis=1)
-
-    feature_cols = [col for col in numeric_cols + ['gender', 'smoking_history'] if col in df.columns]
+            feature_cols.append(col)
 
     X = df[feature_cols].values
     y = df['diabetes'].values
 
-    return X, y, feature_cols
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    return X_scaled, y, feature_cols, scaler  # Fixed return statement
 
 
-def evaluate_model(model, X_test, y_test): # Puts it all together! Yahoo!
-    # Try predict_proba, then decision_function, else fallback to predict
+def evaluate_model(model, X_test, y_test):
     try:
-        probs = model.predict_proba(X_test)[:, 1]
+        probs = model.predict_proba(X_test)
+        if probs.ndim > 1:  # Handle binary classification probability arrays
+            probs = probs[:, 1]
     except AttributeError:
         try:
             decision = model.decision_function(X_test)
             probs = 1 / (1 + np.exp(-decision))
         except AttributeError:
             preds = model.predict(X_test)
-            probs = preds  # not probabilities
+            probs = preds
     mse = mean_squared_error(y_test, probs)
     return mse, probs
 
 
 def main():
-    X, y, features = load_and_preprocess_data(data_path)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, random_state=42)
+    # Fixed: Correct number of return values
+    X, y, features, scaler = load_and_preprocess_data(data_path)
 
-    X_train_std, X_test_std, (means, stds)= standardize_features(X_train, X_test)
+    # Use custom split to avoid sklearn conflict
+    X_train, X_test, y_train, y_test = custom_train_test_split(X, y, test_size=0.5, random_state=42)
 
     # Our models, LR and LSVM
     lr = LogisticRegression(learning_rate=0.1, max_iter=2000, tol=1e-6)
-    lr.fit(X_train_std, y_train)
-    mse_lr = mean_squared_error(y_test, lr.predict_proba(X_test_std))
+    lr.fit(X_train, y_train)
+    mse_lr = mean_squared_error(y_test, lr.predict_proba(X_test))
 
     svm = LinearSVM(learning_rate=0.001, lambda_param=0.01, max_iter=2000, tol=1e-6)
-    svm.fit(X_train_std, y_train)
-    decision = X_test_std @ svm.weights
+    svm.fit(X_train, y_train)
+    decision = X_test @ svm.weights
     probs_svm = 1 / (1 + np.exp(-decision))
     mse_svm = mean_squared_error(y_test, probs_svm)
 
-    # Scikit-learn models, we included these because LR and LSVM are not the only models that we could have trained on, and perhaps we will find one that is better than these two that we coded on our own! :O
+    # Scikit-learn models
     sklearn_models = {
         'kNN': KNeighborsClassifier(n_neighbors=5),
         'RBF SVM': SVC(kernel='rbf', gamma='scale', probability=True, random_state=42),
@@ -204,14 +188,13 @@ def main():
     }
     sklearn_mse = {}
     for name, model in sklearn_models.items():
-        model.fit(X_train_std, y_train)
-        mse, _ = evaluate_model(model, X_test_std, y_test)
+        model.fit(X_train, y_train)
+        mse, _ = evaluate_model(model, X_test, y_test)
         sklearn_mse[name] = mse
 
     all_results = {'Logistic Regression': mse_lr, 'Linear SVM': mse_svm}
     all_results.update(sklearn_mse)
 
-    # Little summary for each model
     print("\nModel Mean Squared Errors:")
     for name, mse in all_results.items():
         print(f"{name}: {mse:.6f}")
@@ -227,7 +210,7 @@ def main():
             print(f"{feat}: {coef:.6f}")
     elif best_model_name == 'Linear SVM':
         coefs = svm.weights
-        feature_names = ['Intercept'] + features
+        feature_names = features  # No intercept for SVM in your implementation
         for feat, coef in zip(feature_names, coefs):
             print(f"{feat}: {coef:.6f}")
     else:
