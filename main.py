@@ -1,13 +1,19 @@
+import os
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.naive_bayes import GaussianNB
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.metrics import mean_squared_error
 
-def train_test_split(X, y, test_size=0.5, random_state=42):
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+data_path = os.path.join(BASE_DIR, "data", "diabetes_dataset.csv")
+df = pd.read_csv(data_path)
+
+
+def custom_train_test_split(X, y, test_size=0.5, random_state=42):
     np.random.seed(random_state)
     n = X.shape[0]
     indices = np.random.permutation(n)
@@ -15,25 +21,6 @@ def train_test_split(X, y, test_size=0.5, random_state=42):
     train_idx = indices[:split_idx]
     test_idx = indices[split_idx:]
     return X[train_idx], X[test_idx], y[train_idx], y[test_idx]
-
-
-def standardize_features(X_train, X_test):
-    X_train_std = X_train.copy().astype(np.float64)
-    X_test_std = X_test.copy().astype(np.float64)
-    means = {}
-    stds = {}
-    continuous_indices = [1, 5, 6, 7] #age, bmi, hbA1c_level, blood_glucose_level
-    for idx in continuous_indices:
-        if idx < X_train.shape[1]:
-            mean = np.mean(X_train[:, idx]) #get mean
-            std = np.std(X_train[:, idx]) #get standard deviation
-            means[idx] = mean
-            stds[idx] = std
-            if std > 0:
-                X_train_std[:, idx] = (X_train[:, idx] - mean) / std #turns it into scaled value (math formula)
-                X_test_std[:, idx] = (X_test[:, idx] - mean) / std #turns it into scaled value (math formula
-    return X_train_std, X_test_std, (means, stds)
-
 
 
 class LogisticRegression:
@@ -50,12 +37,13 @@ class LogisticRegression:
     def fit(self, X, y):
         X = X.astype(np.float64)
         y = y.astype(np.float64)
+        X = np.hstack([np.ones((X.shape[0], 1)), X])
         n_samples, n_features = X.shape
         self.weights = np.zeros(n_features, dtype=np.float64)
         prev_loss = float('inf')
         lr = self.learning_rate
         print(f"Starting Logistic Regression training with {n_features} features...")
-        for i in range(self.max_iter): #gets gradient and adjusts weights
+        for i in range(self.max_iter):
             z = X @ self.weights
             predictions = self.sigmoid(z)
 
@@ -76,10 +64,14 @@ class LogisticRegression:
                 print(f"Iteration {i}, Loss: {loss:.4f}")
 
     def predict_proba(self, X):
+        X = np.hstack([np.ones((X.shape[0], 1)), X])
         return self.sigmoid(X @ self.weights)
-    def predict(self, X):
+
+    def predict(self, X, threshold=0.3, return_proba=False):
         prob = self.predict_proba(X)
-        return np.where(prob >= 0.5, 1, 0)
+        preds = np.where(prob >= threshold, 1, 0)
+        return (preds, prob) if return_proba else preds
+
 
 class LinearSVM:
     def __init__(self, learning_rate=0.001, lambda_param=0.01, max_iter=2000, tol=1e-6):
@@ -115,13 +107,10 @@ class LinearSVM:
     def predict_proba(self, X):
         decision = X @ self.weights
         return 1 / (1 + np.exp(-decision))
-    
+
     def predict(self, X):
         linear_output = X @ self.weights
         return np.where(linear_output >= 0, 1, 0)
-
-def mean_squared_error(y_true, y_pred):
-    return np.mean((y_true - y_pred) ** 2)
 
 
 def load_and_preprocess_data(filename):
@@ -139,52 +128,53 @@ def load_and_preprocess_data(filename):
     numeric_cols = ['age', 'bmi', 'hbA1c_level', 'blood_glucose_level',
                     'hypertension', 'heart_disease',
                     'race:AfricanAmerican', 'race:Asian', 'race:Caucasian', 'race:Hispanic', 'race:Other']
-    for col in numeric_cols:
+
+    # Create feature columns list
+    feature_cols = []
+    for col in numeric_cols + ['gender', 'smoking_history']:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-    if 'year' in df.columns:
-        df = df.drop('year', axis=1)
-
-    feature_cols = [col for col in numeric_cols + ['gender', 'smoking_history'] if col in df.columns]
+            feature_cols.append(col)
 
     X = df[feature_cols].values
     y = df['diabetes'].values
 
-    return X, y, feature_cols
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    return X_scaled, y, feature_cols, scaler  # Fixed return statement
+
 
 def evaluate_model(model, X_test, y_test):
-    # Try predict_proba, then decision_function, else fallback to predict
     try:
-        probs = model.predict_proba(X_test)[:, 1]
+        probs = model.predict_proba(X_test)
+        if probs.ndim > 1:  # Handle binary classification probability arrays
+            probs = probs[:, 1]
     except AttributeError:
         try:
             decision = model.decision_function(X_test)
             probs = 1 / (1 + np.exp(-decision))
         except AttributeError:
             preds = model.predict(X_test)
-            probs = preds  # not probabilities
+            probs = preds
     mse = mean_squared_error(y_test, probs)
     return mse, probs
 
+
 def main():
-    # Load data
-    X, y, features = load_and_preprocess_data("C:/Users/gsnov/Downloads/diabetes_dataset.csv")
+    # Fixed: Correct number of return values
+    X, y, features, scaler = load_and_preprocess_data(data_path)
 
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.5, random_state=42)
+    # Use custom split to avoid sklearn conflict
+    X_train, X_test, y_train, y_test = custom_train_test_split(X, y, test_size=0.5, random_state=42)
 
-    # Standardize features
-    X_train_std, X_test_std = standardize_features(X_train, X_test)
-
-    # Initialize and train your hand-coded models
+    # Our models, LR and LSVM
     lr = LogisticRegression(learning_rate=0.1, max_iter=2000, tol=1e-6)
-    lr.fit(X_train_std, y_train)
-    mse_lr = mean_squared_error(y_test, lr.predict_proba(X_test_std))
+    lr.fit(X_train, y_train)
+    mse_lr = mean_squared_error(y_test, lr.predict_proba(X_test))
 
     svm = LinearSVM(learning_rate=0.001, lambda_param=0.01, max_iter=2000, tol=1e-6)
-    svm.fit(X_train_std, y_train)
-    decision = X_test_std @ svm.weights
+    svm.fit(X_train, y_train)
+    decision = X_test @ svm.weights
     probs_svm = 1 / (1 + np.exp(-decision))
     mse_svm = mean_squared_error(y_test, probs_svm)
 
@@ -198,24 +188,20 @@ def main():
     }
     sklearn_mse = {}
     for name, model in sklearn_models.items():
-        model.fit(X_train_std, y_train)
-        mse, _ = evaluate_model(model, X_test_std, y_test)
+        model.fit(X_train, y_train)
+        mse, _ = evaluate_model(model, X_test, y_test)
         sklearn_mse[name] = mse
 
-    # Combine all results
     all_results = {'Logistic Regression': mse_lr, 'Linear SVM': mse_svm}
     all_results.update(sklearn_mse)
 
-    # Print all MSEs
     print("\nModel Mean Squared Errors:")
     for name, mse in all_results.items():
         print(f"{name}: {mse:.6f}")
 
-    # Determine best model
     best_model_name = min(all_results, key=all_results.get)
     print(f"\nBest model by MSE: {best_model_name}")
 
-    # Print coefficients / feature importances for best model
     print("\nFeature coefficients (or importance) for best model:")
     if best_model_name == 'Logistic Regression':
         coefs = lr.weights
@@ -224,7 +210,7 @@ def main():
             print(f"{feat}: {coef:.6f}")
     elif best_model_name == 'Linear SVM':
         coefs = svm.weights
-        feature_names = ['Intercept'] + features
+        feature_names = features  # No intercept for SVM in your implementation
         for feat, coef in zip(feature_names, coefs):
             print(f"{feat}: {coef:.6f}")
     else:
@@ -240,6 +226,7 @@ def main():
                 print(f"{feat}: {coef:.6f}")
         else:
             print("No coefficient information available")
+
 
 if __name__ == "__main__":
     main()
